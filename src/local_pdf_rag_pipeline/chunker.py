@@ -15,10 +15,14 @@ def line_kind(line: str) -> str:
     return "text"
 
 
-def chunk_pages(pages: list[dict], size: int = 800, overlap: int = 100) -> list[dict]:
+def chunk_pages(
+    pages: list[dict], size: int = 800, overlap: int = 100, max_chunks: int = 100_000
+) -> list[dict]:
     """Split each page independently, carrying headings into following chunks."""
     if size <= 0 or overlap < 0 or overlap >= size:
         raise ValueError("Chunk size must be positive and overlap smaller than size.")
+    if max_chunks < 1:
+        raise ValueError("Maximum chunks must be positive.")
     chunks = []
     for page in pages:
         if not isinstance(page.get("page"), int) or page["page"] < 1 or not page.get("source"):
@@ -56,6 +60,8 @@ def chunk_pages(pages: list[dict], size: int = 800, overlap: int = 100) -> list[
                         "content_type": kind,
                     }
                 )
+                if len(chunks) > max_chunks:
+                    raise ValueError("Text exceeds the configured chunk limit.")
                 if start + size >= len(text):
                     break
     if not chunks:
