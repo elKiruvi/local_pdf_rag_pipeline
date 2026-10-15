@@ -43,7 +43,7 @@ jobs:
             echo 'FAIL: synthetic secret was disclosed'
             exit 1
           fi
-          "$RUNNER_TEMP/gitleaks" git --redact --no-banner --log-level error .
+          "$RUNNER_TEMP/gitleaks" git --redact --no-banner --log-level error --log-opts='--all' .
   quality:
     name: locked-offline-quality
     runs-on: ubuntu-latest
