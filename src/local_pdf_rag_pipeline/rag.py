@@ -2,8 +2,9 @@
 
 from time import perf_counter
 
-from ollama import Client, ResponseError
+from ollama import ResponseError
 
+from .embed import local_client
 from .retrieve import retrieve
 
 CHAT_MODEL = "gemma3:4b"
@@ -37,7 +38,7 @@ def answer(
     chat_model: str = CHAT_MODEL,
     client=None,
 ) -> dict:
-    client = client or Client()
+    client = client or local_client()
     start = perf_counter()
     passages = retrieve(question, index, chunks, top_k, embedding_model, client)
     retrieval_seconds = perf_counter() - start

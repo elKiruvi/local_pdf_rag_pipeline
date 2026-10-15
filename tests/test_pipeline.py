@@ -12,7 +12,7 @@ import pytest
 from local_pdf_rag_pipeline.build_index import build_index, load_index
 from local_pdf_rag_pipeline.chunker import chunk_pages, line_kind
 from local_pdf_rag_pipeline.demo import create_demo
-from local_pdf_rag_pipeline.embed import embed_texts
+from local_pdf_rag_pipeline.embed import LOCAL_OLLAMA_HOST, embed_texts, local_client
 from local_pdf_rag_pipeline.ingest import clean_text, extract_pages
 from local_pdf_rag_pipeline.rag import SYSTEM_PROMPT, answer, assemble_messages
 from local_pdf_rag_pipeline.retrieve import retrieve
@@ -119,6 +119,25 @@ def test_embedding_shape_normalization_and_errors():
 
     with pytest.raises(RuntimeError, match="Local Ollama"):
         embed_texts(["one"], client=Offline())
+
+
+def test_local_ollama_client_ignores_environment_host(monkeypatch):
+    settings = {}
+
+    def capture_client(**kwargs):
+        settings.update(kwargs)
+        return FakeClient()
+
+    monkeypatch.setenv("OLLAMA_HOST", "https://remote.invalid")
+    monkeypatch.setenv("HTTPS_PROXY", "https://proxy.invalid")
+    monkeypatch.setenv("OLLAMA_API_KEY", "dummy")
+    monkeypatch.setattr("local_pdf_rag_pipeline.embed.Client", capture_client)
+    assert isinstance(local_client(), FakeClient)
+    assert settings == {
+        "host": LOCAL_OLLAMA_HOST,
+        "headers": {"Authorization": ""},
+        "trust_env": False,
+    }
 
 
 def test_index_retrieval_alignment_and_ranking(tmp_path):

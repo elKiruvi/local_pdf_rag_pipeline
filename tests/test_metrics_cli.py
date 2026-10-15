@@ -122,8 +122,7 @@ def test_cli_index_retrieve_ask_evaluate_without_ollama(tmp_path, monkeypatch, c
             assert "<untrusted_passage>" in messages[1]["content"]
             return SimpleNamespace(message=SimpleNamespace(content="Evidence is insufficient."))
 
-    monkeypatch.setattr("local_pdf_rag_pipeline.embed.Client", OfflineClient)
-    monkeypatch.setattr("local_pdf_rag_pipeline.rag.Client", OfflineClient)
+    monkeypatch.setattr("local_pdf_rag_pipeline.embed.Client", lambda **kwargs: OfflineClient())
     monkeypatch.chdir(tmp_path)
     for args in (["demo"], ["ingest", "--pdf", "outputs/demo.pdf"], ["chunk"], ["index"]):
         assert main(args) == 0
