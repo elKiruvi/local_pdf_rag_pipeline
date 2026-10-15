@@ -368,6 +368,22 @@ def test_resource_limits_and_json_rollback(tmp_path, monkeypatch):
     assert read_json(target) == {"old": True}
 
 
+def test_json_paths_reject_parent_symlink(tmp_path):
+    from local_pdf_rag_pipeline.cli import read_json, write_json
+
+    destination = tmp_path / "destination"
+    destination.mkdir()
+    file = destination / "record.json"
+    write_json(file, {"trusted": True})
+    before = file.read_bytes()
+    (tmp_path / "alias").symlink_to(destination, target_is_directory=True)
+    with pytest.raises(ValueError, match="symlinks"):
+        read_json(tmp_path / "alias" / "record.json")
+    with pytest.raises(ValueError, match="symlinks"):
+        write_json(tmp_path / "alias" / "record.json", {"redirected": True})
+    assert file.read_bytes() == before
+
+
 def test_prompt_answer_and_safe_references(tmp_path):
     chunks = chunks_fixture()
     build_index(np.asarray([[1, 0], [0, 1]], dtype=np.float32), chunks, tmp_path / "index")

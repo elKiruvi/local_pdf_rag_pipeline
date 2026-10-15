@@ -17,7 +17,15 @@ from .rag import CHAT_MODEL, answer
 from .retrieve import retrieve
 
 
+def _check_json_path(path: Path) -> None:
+    if ".." in path.parts or any(
+        part.is_symlink() for part in (path.absolute(), *path.absolute().parents)
+    ):
+        raise ValueError("Local JSON path must not traverse symlinks.")
+
+
 def read_json(path: Path):
+    _check_json_path(path)
     if not path.is_file():
         raise ValueError("Required local input file is missing; run the preceding command first.")
     if path.is_symlink() or path.stat().st_size > 50_000_000:
@@ -26,9 +34,8 @@ def read_json(path: Path):
 
 
 def write_json(path: Path, value) -> None:
+    _check_json_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    if path.is_symlink():
-        raise ValueError("JSON output must not replace a symlink.")
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(
