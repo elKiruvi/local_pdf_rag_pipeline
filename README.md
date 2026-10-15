@@ -26,9 +26,11 @@ uv run --locked pdf-rag ask "When should a backup be created?"
 uv run --locked pdf-rag evaluate --top-k 3
 ```
 
-`demo` writes an independently authored two-page PDF to ignored `outputs/`. The other commands write extracted pages, chunks, a FAISS index, and an embedding-model manifest there. Retrieval prints passages with scores and one-based page numbers; `ask` prints an answer, retrieved references, and retrieval/generation timings. Answers and metric values vary with local models and are **not** asserted as benchmarks. Example: for the backup question, relevant evidence is on page 2 of `demo.pdf`; the model should describe the Friday schedule if it follows the supplied context. References identify retrieved passages, **not verified sentence-level citations**.
+`demo` writes an independently authored three-page PDF to ignored `outputs/`. The other commands write extracted pages, chunks, a FAISS index, and an embedding-model manifest there. Retrieval prints passages with scores and one-based page numbers; `ask` prints an answer, retrieved references, and retrieval/generation timings. Answers and metric values vary with local models and are **not** asserted as benchmarks. Example: for the backup question, relevant evidence is on page 2 of `demo.pdf`; the model should describe the Friday schedule if it follows the supplied context. References identify retrieved passages, **not verified sentence-level citations**. Five labeled synthetic retrieval cases include a heading-only term and an unsupported question; no real-corpus quality score is claimed.
 
 To ingest your own PDF, pass its path to `ingest --pdf`; use `--output`, `--pages`, `--chunks`, and `--index` to select local destinations. `--embedding-model` and `--chat-model` override the defaults. The Ollama client connects only to `127.0.0.1:11434`; it ignores `OLLAMA_HOST`, proxy settings, and ambient API credentials. PDFs must contain extractable text; OCR is not included. Treat local PDF, JSON, and FAISS files as sensitive. The ignore rules are not access controls: do not commit your corpus or share your local outputs.
+
+`ingest` preserves extractable tab separators for the conservative table-row heuristic; it does not reconstruct PDF tables. `index --batch-size 32` (default) sends at most 32 chunks per local Ollama request. Section headings now contribute to embeddings while stored passage text stays original. Remove and rebuild older local indexes (manifest schema v2); the model tag alone does not identify a particular model binary.
 
 ## Verify without models
 
@@ -40,7 +42,7 @@ uv run --locked pytest
 uv run --locked python -m build
 ```
 
-The tests mock Ollama; normal CI neither pulls models nor calls cloud services. `uv run --locked pdf-rag ...` needs the local Ollama daemon for `index`, `retrieve`, `ask`, and `evaluate`. If it is unavailable or models are missing, start the daemon and pull the named models. For missing input/index errors, run the preceding commands in order. For scanned PDFs, supply an independently OCR-processed text PDF. No cloud fallback, remote tracing, or default query log is provided. Retrieved documents can contain hostile instructions: passage delimiters and a system instruction reduce but cannot eliminate prompt-injection risk. Answers must be verified against the original document for important decisions.
+The tests mock Ollama; normal CI neither pulls models nor calls cloud services. `uv run --locked pdf-rag ...` needs the local Ollama daemon for `index`, `retrieve`, `ask`, and `evaluate`. If it is unavailable or models are missing, start the daemon and pull the named models. For missing input/index errors, run the preceding commands in order. For scanned PDFs, supply an independently OCR-processed text PDF. No cloud fallback, remote tracing, or default query log is provided. Retrieved documents can contain hostile instructions: JSON-encoded reference data, a separate user question and a system instruction reduce ambiguity but cannot guarantee prompt-injection resistance. Answers must be verified against the original document for important decisions.
 
 ## Structure and boundaries
 
