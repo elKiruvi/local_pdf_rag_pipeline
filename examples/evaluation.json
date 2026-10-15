@@ -1,0 +1,10 @@
+[
+  {
+    "question": "When should a backup be created?",
+    "relevant_ids": ["chunk-0002"]
+  },
+  {
+    "question": "What should happen after pressing the power button?",
+    "relevant_ids": ["chunk-0000", "chunk-0001"]
+  }
+]
