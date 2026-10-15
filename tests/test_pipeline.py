@@ -1,5 +1,6 @@
 """Offline contract tests using newly authored text and fake Ollama responses."""
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -125,11 +126,16 @@ def test_index_retrieval_alignment_and_ranking(tmp_path):
     vectors = np.asarray([[1, 0], [0, 1]], dtype=np.float32)
     with pytest.raises(ValueError, match="match"):
         build_index(vectors[:1], chunks, tmp_path / "bad")
+    with pytest.raises(ValueError, match="L2-normalized"):
+        build_index(vectors * 2, chunks, tmp_path / "bad")
     with pytest.raises(ValueError, match="No index"):
         load_index(tmp_path / "missing")
     build_index(vectors, chunks, tmp_path / "index")
     index, metadata = load_index(tmp_path / "index")
     assert index.ntotal == 2 and index.d == 2 and index.metric_type == faiss.METRIC_INNER_PRODUCT
+    assert load_index(tmp_path / "index", expected_model="embeddinggemma")[0].ntotal == 2
+    with pytest.raises(ValueError, match="model differs"):
+        load_index(tmp_path / "index", expected_model="different-model")
     client = FakeClient(embeddings=[[0, 5]])
     found = retrieve("backup?", index, metadata, top_k=9, client=client)
     assert [item["page"] for item in found] == [2, 1]
@@ -140,6 +146,12 @@ def test_index_retrieval_alignment_and_ranking(tmp_path):
         retrieve("backup?", index, metadata, client=FakeClient(embeddings=[[1, 2, 3]]))
     (tmp_path / "index" / "metadata.json").write_text("[]")
     with pytest.raises(ValueError, match="disagree"):
+        load_index(tmp_path / "index")
+    (tmp_path / "index" / "metadata.json").write_text(json.dumps(chunks))
+    (tmp_path / "index" / "manifest.json").write_text(
+        '{"embedding_model":"embeddinggemma","dimension":4}'
+    )
+    with pytest.raises(ValueError, match="manifest disagrees"):
         load_index(tmp_path / "index")
 
 
