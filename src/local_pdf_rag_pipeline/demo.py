@@ -27,6 +27,13 @@ def create_demo(path: Path) -> Path:
                 "Check the backup by restoring one test file before disconnecting the drive.",
             ],
         ),
+        (
+            "MAINTENANCE WINDOW",
+            [
+                "The checks run every Tuesday.",
+                "Record the result in a local notebook after each check.",
+            ],
+        ),
     ]:
         page = document.new_page()
         page.insert_text((72, 72), heading, fontsize=16)

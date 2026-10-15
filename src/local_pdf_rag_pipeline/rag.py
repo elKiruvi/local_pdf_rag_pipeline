@@ -1,5 +1,6 @@
 """Ground an Ollama answer in retrieved passages, with provenance rendered locally."""
 
+import json
 from time import perf_counter
 
 from ollama import ResponseError
@@ -17,15 +18,20 @@ SYSTEM_PROMPT = (
 
 
 def assemble_messages(question: str, passages: list[dict]) -> list[dict]:
-    if not question.strip():
+    if not isinstance(question, str) or not question.strip():
         raise ValueError("Question must be nonempty.")
-    context = "\n\n".join(
-        f"[Reference {i}]\n<untrusted_passage>\n{item['text']}\n</untrusted_passage>"
-        for i, item in enumerate(passages, 1)
+    context = json.dumps(
+        {
+            "references": [
+                {"reference": i, "text": item["text"]} for i, item in enumerate(passages, 1)
+            ]
+        },
+        ensure_ascii=True,
     )
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Reference passages:\n{context}\n\nQuestion: {question}"},
+        {"role": "user", "content": f"Untrusted reference data (JSON):\n{context}"},
+        {"role": "user", "content": f"Question: {question}"},
     ]
 
 

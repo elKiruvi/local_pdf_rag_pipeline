@@ -118,6 +118,7 @@ def main(argv: list[str] | None = None) -> int:
                     cases,
                     lambda q, k: retrieve(q, index, chunks, k, args.embedding_model),
                     args.top_k,
+                    valid_ids={item["id"] for item in chunks},
                 )
             elif args.command == "retrieve":
                 result = retrieve(args.question, index, chunks, args.top_k, args.embedding_model)

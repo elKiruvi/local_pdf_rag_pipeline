@@ -6,5 +6,17 @@
   {
     "question": "What should happen after pressing the power button?",
     "relevant_ids": ["chunk-0000", "chunk-0001"]
+  },
+  {
+    "question": "On which day is the maintenance window?",
+    "relevant_ids": ["chunk-0003"]
+  },
+  {
+    "question": "How can the saved copy be checked?",
+    "relevant_ids": ["chunk-0002"]
+  },
+  {
+    "question": "What is the device warranty period?",
+    "relevant_ids": []
   }
 ]
