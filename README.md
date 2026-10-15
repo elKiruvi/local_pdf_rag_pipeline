@@ -30,6 +30,8 @@ uv run --locked pdf-rag evaluate --top-k 3
 
 To ingest your own PDF, pass its path to `ingest --pdf`; use `--output`, `--pages`, `--chunks`, and `--index` to select local destinations. `--embedding-model` and `--chat-model` override the defaults. The Ollama client connects only to `127.0.0.1:11434`; it ignores `OLLAMA_HOST`, proxy settings, and ambient API credentials. PDFs must contain extractable text; OCR is not included. Treat local PDF, JSON, and FAISS files as sensitive. The ignore rules are not access controls: do not commit your corpus or share your local outputs.
 
+`ingest` preserves extractable tab separators for the conservative table-row heuristic; it does not reconstruct PDF tables. `index --batch-size 32` (default) sends at most 32 chunks per local Ollama request. Section headings now contribute to embeddings while stored passage text stays original. Remove and rebuild older local indexes (manifest schema v2); the model tag alone does not identify a particular model binary.
+
 ## Verify without models
 
 ```bash

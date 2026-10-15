@@ -12,7 +12,12 @@ import pytest
 from local_pdf_rag_pipeline.build_index import build_index, load_index
 from local_pdf_rag_pipeline.chunker import chunk_pages, line_kind
 from local_pdf_rag_pipeline.demo import create_demo
-from local_pdf_rag_pipeline.embed import LOCAL_OLLAMA_HOST, embed_texts, local_client
+from local_pdf_rag_pipeline.embed import (
+    LOCAL_OLLAMA_HOST,
+    chunk_embedding_text,
+    embed_texts,
+    local_client,
+)
 from local_pdf_rag_pipeline.ingest import clean_text, extract_pages
 from local_pdf_rag_pipeline.rag import SYSTEM_PROMPT, answer, assemble_messages
 from local_pdf_rag_pipeline.retrieve import retrieve
@@ -73,6 +78,31 @@ def test_clean_and_extract(tmp_path):
         extract_pages(tmp_path / "blank.pdf")
 
 
+def test_tabular_row_survives_pdf_ingestion(tmp_path):
+    pdf = pymupdf.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "OPERATIONS", fontsize=16)
+    page.insert_text((72, 110), "Item\tQuantity\tUnit")
+    page.insert_text((72, 135), "Cable\tTwo\tPieces")
+    page.insert_text((72, 160), "This ordinary sentence is not a table.")
+    path = tmp_path / "synthetic.pdf"
+    pdf.save(path)
+    pdf.close()
+    pages = extract_pages(path)
+    assert "Item\tQuantity\tUnit" in pages[0]["text"]
+    chunks = chunk_pages(pages)
+    assert any(
+        item["content_type"] == "table"
+        and item["page"] == 1
+        and "Cable\tTwo\tPieces" in item["text"]
+        for item in chunks
+    )
+    assert any(
+        item["content_type"] == "text" and "ordinary sentence" in item["text"] for item in chunks
+    )
+    assert all(item["source"] == "synthetic.pdf" for item in chunks)
+
+
 def test_chunk_boundaries_and_heuristics():
     assert line_kind("# Overview") == "heading"
     assert line_kind("2.1 Setup") == "heading"
@@ -119,6 +149,67 @@ def test_embedding_shape_normalization_and_errors():
 
     with pytest.raises(RuntimeError, match="Local Ollama"):
         embed_texts(["one"], client=Offline())
+
+
+def test_embedding_batches_preserve_order_and_fail_safely():
+    class Batched:
+        def __init__(self):
+            self.calls = []
+            self.fail_after = None
+            self.wrong_dimension = False
+
+        def embed(self, *, model, input):
+            self.calls.append(input)
+            if len(self.calls) == self.fail_after:
+                raise ConnectionError("private input")
+            dimension = 3 if self.wrong_dimension and len(self.calls) > 1 else 2
+            return {"embeddings": [[int(text), 1] + [0] * (dimension - 2) for text in input]}
+
+    client = Batched()
+    matrix = embed_texts(["1", "2", "3", "4", "5"], client=client, batch_size=2)
+    assert client.calls == [["1", "2"], ["3", "4"], ["5"]]
+    np.testing.assert_allclose(matrix[2], np.array([3, 1]) / np.sqrt(10))
+    assert embed_texts(["1"], client=Batched(), batch_size=1).shape == (1, 2)
+    for invalid in (0, -1, True, 1025, 2.5):
+        with pytest.raises(ValueError, match="batch size"):
+            embed_texts(["1"], client=Batched(), batch_size=invalid)
+    client = Batched()
+    client.fail_after = 2
+    with pytest.raises(RuntimeError, match="Local Ollama"):
+        embed_texts(["1", "2", "3"], client=client, batch_size=2)
+    client = Batched()
+    client.wrong_dimension = True
+    with pytest.raises(ValueError, match="shape"):
+        embed_texts(["1", "2"], client=client, batch_size=1)
+    with pytest.raises(ValueError, match="shape"):
+        embed_texts(["1"], client=FakeClient(embeddings=[]), batch_size=1)
+
+
+def test_heading_terms_improve_toy_retrieval_without_changing_evidence(tmp_path):
+    chunks = [
+        dict(chunks_fixture()[0], section="CALIBRATION", text="Run checks on Tuesday."),
+        dict(chunks_fixture()[1], section="SETUP", text="Connect power on Friday."),
+    ]
+
+    class LexicalClient:
+        def embed(self, *, model, input):
+            return {
+                "embeddings": [
+                    [1, 0] if "calibration" in text.lower() else [0, 1] for text in input
+                ]
+            }
+
+    client = LexicalClient()
+    before = embed_texts([item["text"] for item in chunks], client=client)
+    assert before[0].tolist() == before[1].tolist()
+    vectors = embed_texts([chunk_embedding_text(item) for item in chunks], client=client)
+    build_index(vectors, chunks, tmp_path / "index")
+    index, metadata = load_index(tmp_path / "index")
+    assert (
+        retrieve("When is calibration?", index, metadata, top_k=1, client=client)[0]["id"]
+        == chunks[0]["id"]
+    )
+    assert metadata[0]["text"] == "Run checks on Tuesday."
 
 
 def test_local_ollama_client_ignores_environment_host(monkeypatch):
@@ -198,7 +289,7 @@ def test_index_rejects_tampering_and_invalid_metadata_before_native_load(tmp_pat
     monkeypatch.undo()
     (directory / "vectors.index").write_bytes(original)
     manifest = json.loads((directory / "manifest.json").read_text())
-    for key, value in (("dimension", -1), ("vector_count", True), ("schema_version", 2)):
+    for key, value in (("dimension", -1), ("vector_count", True), ("schema_version", 3)):
         altered = dict(manifest, **{key: value})
         (directory / "manifest.json").write_text(json.dumps(altered))
         with pytest.raises(ValueError, match="schema"):

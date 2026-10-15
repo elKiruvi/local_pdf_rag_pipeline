@@ -137,3 +137,32 @@ def test_cli_index_retrieve_ask_evaluate_without_ollama(tmp_path, monkeypatch, c
     assert main(["evaluate", "--cases", str(cases)]) == 0
     assert json.loads(capsys.readouterr().out)["cases"] == 2
     assert not list(tmp_path.glob("*.log"))
+
+
+def test_later_embedding_batch_failure_preserves_previous_index(tmp_path, monkeypatch, capsys):
+    from types import SimpleNamespace
+
+    from local_pdf_rag_pipeline.build_index import load_index
+
+    class LocalClient:
+        calls = 0
+        fail_later = False
+
+        def embed(self, *, model, input):
+            self.calls += 1
+            if self.fail_later and self.calls == 2:
+                raise ConnectionError("private data")
+            return SimpleNamespace(embeddings=[[1.0, 0.0] for _ in input])
+
+    client = LocalClient()
+    monkeypatch.setattr("local_pdf_rag_pipeline.embed.Client", lambda **kwargs: client)
+    monkeypatch.chdir(tmp_path)
+    for args in (["demo"], ["ingest", "--pdf", "outputs/demo.pdf"], ["chunk"], ["index"]):
+        assert main(args) == 0
+    before = (tmp_path / "outputs/index/manifest.json").read_bytes()
+    client.calls = 0
+    client.fail_later = True
+    assert main(["index", "--batch-size", "1"]) == 1
+    assert before == (tmp_path / "outputs/index/manifest.json").read_bytes()
+    assert load_index(tmp_path / "outputs/index")[0].ntotal == 3
+    assert "private data" not in capsys.readouterr().err

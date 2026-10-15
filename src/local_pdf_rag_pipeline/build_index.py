@@ -13,7 +13,7 @@ import numpy as np
 from .embed import EMBEDDING_MODEL
 
 FILES = {"vectors.index", "metadata.json", "manifest.json"}
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_VECTORS = 100_000
 MAX_DIMENSION = 16_384
 MAX_FILE_BYTES = {"vectors.index": 512_000_000, "metadata.json": 50_000_000, "manifest.json": 4_096}
