@@ -147,7 +147,7 @@ def test_index_retrieval_alignment_and_ranking(tmp_path):
         build_index(vectors[:1], chunks, tmp_path / "bad")
     with pytest.raises(ValueError, match="L2-normalized"):
         build_index(vectors * 2, chunks, tmp_path / "bad")
-    with pytest.raises(ValueError, match="No index"):
+    with pytest.raises(ValueError, match="No complete index"):
         load_index(tmp_path / "missing")
     build_index(vectors, chunks, tmp_path / "index")
     index, metadata = load_index(tmp_path / "index")
@@ -164,14 +164,117 @@ def test_index_retrieval_alignment_and_ranking(tmp_path):
     with pytest.raises(ValueError, match="dimension"):
         retrieve("backup?", index, metadata, client=FakeClient(embeddings=[[1, 2, 3]]))
     (tmp_path / "index" / "metadata.json").write_text("[]")
-    with pytest.raises(ValueError, match="disagree"):
+    with pytest.raises(ValueError, match="checksum"):
         load_index(tmp_path / "index")
-    (tmp_path / "index" / "metadata.json").write_text(json.dumps(chunks))
-    (tmp_path / "index" / "manifest.json").write_text(
-        '{"embedding_model":"embeddinggemma","dimension":4}'
+    build_index(vectors, chunks, tmp_path / "replacement")
+    directory = tmp_path / "replacement"
+    (directory / "manifest.json").write_text('{"embedding_model":"embeddinggemma","dimension":4}')
+    with pytest.raises(ValueError, match="schema is unsupported"):
+        load_index(directory)
+
+
+def test_index_rejects_tampering_and_invalid_metadata_before_native_load(tmp_path, monkeypatch):
+    import hashlib
+
+    from local_pdf_rag_pipeline import build_index as module
+
+    directory = tmp_path / "index"
+    vectors = np.eye(2, dtype=np.float32)
+    chunks = chunks_fixture()
+    for bad in (
+        [chunks[0], chunks[0]],
+        [dict(chunks[0], page=True), chunks[1]],
+        [dict(chunks[0], source="../hidden.pdf"), chunks[1]],
+        [dict(chunks[0], text=1), chunks[1]],
+    ):
+        with pytest.raises(ValueError, match="metadata"):
+            build_index(vectors, bad, directory)
+    build_index(vectors, chunks, directory)
+    original = (directory / "vectors.index").read_bytes()
+    (directory / "vectors.index").write_bytes(original[:10])
+    monkeypatch.setattr(module.faiss, "read_index", lambda *_: pytest.fail("Unsafe FAISS read"))
+    with pytest.raises(ValueError, match="checksum"):
+        load_index(directory)
+    monkeypatch.undo()
+    (directory / "vectors.index").write_bytes(original)
+    manifest = json.loads((directory / "manifest.json").read_text())
+    for key, value in (("dimension", -1), ("vector_count", True), ("schema_version", 2)):
+        altered = dict(manifest, **{key: value})
+        (directory / "manifest.json").write_text(json.dumps(altered))
+        with pytest.raises(ValueError, match="schema"):
+            load_index(directory)
+    (directory / "manifest.json").write_text(json.dumps(manifest))
+    malformed = [dict(chunks[0], id=chunks[1]["id"]), chunks[1]]
+    metadata = directory / "metadata.json"
+    metadata.write_text(json.dumps(malformed))
+    manifest["sha256"]["metadata.json"] = hashlib.sha256(metadata.read_bytes()).hexdigest()
+    (directory / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="metadata is invalid"):
+        load_index(directory)
+    metadata.write_text(json.dumps(chunks))
+    manifest["sha256"]["metadata.json"] = hashlib.sha256(metadata.read_bytes()).hexdigest()
+    (directory / "manifest.json").write_text(json.dumps(manifest))
+    (directory / "extra.txt").write_text("not an index file")
+    with pytest.raises(ValueError, match="No complete index"):
+        load_index(directory)
+    (directory / "extra.txt").unlink()
+    (directory / "metadata.json").unlink()
+    (directory / "metadata.json").symlink_to(tmp_path / "missing")
+    with pytest.raises(ValueError, match="file type"):
+        load_index(directory)
+
+
+def test_index_replacement_rollback_and_cleanup(tmp_path, monkeypatch):
+    directory = tmp_path / "index"
+    vectors = np.eye(2, dtype=np.float32)
+    chunks = chunks_fixture()
+    build_index(vectors, chunks, directory)
+    before = {path.name: path.read_bytes() for path in directory.iterdir()}
+    renamed = Path.rename
+
+    def fail_install(path, target):
+        if ".staging-" in path.name and target == directory:
+            raise OSError("simulated interruption")
+        return renamed(path, target)
+
+    monkeypatch.setattr(Path, "rename", fail_install)
+    with pytest.raises(OSError, match="simulated"):
+        build_index(vectors, [dict(chunks[0], text="Changed"), chunks[1]], directory)
+    assert {path.name: path.read_bytes() for path in directory.iterdir()} == before
+    assert not list(tmp_path.glob(".index.*"))
+    monkeypatch.undo()
+    build_index(vectors, [dict(chunks[0], text="Changed"), chunks[1]], directory)
+    assert load_index(directory)[1][0]["text"] == "Changed"
+    assert not list(tmp_path.glob(".index.*"))
+
+
+def test_resource_limits_and_json_rollback(tmp_path, monkeypatch):
+    from local_pdf_rag_pipeline.cli import read_json, write_json
+
+    pdf = create_demo(tmp_path / "demo.pdf")
+    with pytest.raises(ValueError, match="size limit"):
+        extract_pages(pdf, max_pdf_bytes=1)
+    with pytest.raises(ValueError, match="page limit"):
+        extract_pages(pdf, max_pages=1)
+    with pytest.raises(ValueError, match="decoded-text limit"):
+        extract_pages(pdf, max_text_chars=1)
+    with pytest.raises(ValueError, match="positive"):
+        extract_pages(pdf, max_pages=0)
+    with pytest.raises(ValueError, match="chunk limit"):
+        chunk_pages(
+            [{"source": "demo.pdf", "page": 1, "text": "a\nb\nc"}], size=1, overlap=0, max_chunks=1
+        )
+    target = tmp_path / "record.json"
+    write_json(target, {"old": True})
+    old = target.read_bytes()
+    monkeypatch.setattr(
+        "local_pdf_rag_pipeline.cli.os.replace", lambda *_: (_ for _ in ()).throw(OSError())
     )
-    with pytest.raises(ValueError, match="manifest disagrees"):
-        load_index(tmp_path / "index")
+    with pytest.raises(OSError):
+        write_json(target, {"new": True})
+    assert target.read_bytes() == old
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["demo.pdf", "record.json"]
+    assert read_json(target) == {"old": True}
 
 
 def test_prompt_answer_and_safe_references(tmp_path):

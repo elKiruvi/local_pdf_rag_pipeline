@@ -4,6 +4,8 @@ Do not report vulnerabilities using a public issue if the report contains secret
 
 This local demonstration has no production security guarantee. It sends passages only to the loopback Ollama client, but local Ollama configuration, filesystem permissions, other processes and model behavior remain outside this package's control. Generated JSON and FAISS indexes contain private source text. **Load only trusted, locally generated indexes**: native FAISS parsing is not safe for arbitrary attacker-controlled files. Even a checksum alongside a mutable index detects corruption, not malicious replacement. `.gitignore` is not an access control.
 
+Index schema version 1 rejects older generated indexes; remove and rebuild an old local demo index yourself. The loader checks files, sizes, checksums and metadata before native FAISS parsing, but cannot authenticate or sandbox it. Local writers stage a candidate and normally roll back failed replacement; power loss, hostile concurrent mutation, filesystem behavior and disk failure remain residual risks. Limit flags reduce routine resource exhaustion, not all parser-level denial of service.
+
 | Threat | Relative risk | Boundary and residual risk |
 | --- | --- | --- |
 | Accidental publication of documents, derived data or credentials | High | Tracked-tree and reachable-history policy plus Gitleaks check common patterns; inspect every publication surface separately. |
