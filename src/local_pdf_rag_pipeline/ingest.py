@@ -10,7 +10,7 @@ def clean_text(text: str) -> str:
     """Normalize whitespace while keeping paragraph and row boundaries."""
     text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\u00ad", "")
     text = re.sub(r"(?<=\w)-\n(?=\w)", "", text)
-    lines = [re.sub(r"[\t \u00a0]+", " ", line).strip() for line in text.splitlines()]
+    lines = [re.sub(r"[ \u00a0]+", " ", line).strip() for line in text.splitlines()]
     return "\n".join(line for line in lines if line).strip()
 
 

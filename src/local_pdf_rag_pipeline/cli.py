@@ -10,7 +10,7 @@ from pathlib import Path
 from .build_index import build_index, load_index
 from .chunker import chunk_pages
 from .demo import create_demo
-from .embed import EMBEDDING_MODEL, embed_texts
+from .embed import EMBEDDING_MODEL, chunk_embedding_text, embed_texts
 from .evaluate_retrieval import evaluate
 from .ingest import extract_pages
 from .rag import CHAT_MODEL, answer
@@ -66,6 +66,7 @@ def parser() -> argparse.ArgumentParser:
     indexing.add_argument("--chunks", type=Path, default=Path("outputs/chunks.json"))
     indexing.add_argument("--output", type=Path, default=Path("outputs/index"))
     indexing.add_argument("--embedding-model", default=EMBEDDING_MODEL)
+    indexing.add_argument("--batch-size", type=int, default=32)
     for name in ("retrieve", "ask"):
         cmd = commands.add_parser(
             name, help="Search local index" if name == "retrieve" else "Ask local model"
@@ -102,7 +103,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Created {len(chunks)} local chunk(s).")
         elif args.command == "index":
             chunks = read_json(args.chunks)
-            vectors = embed_texts([item["text"] for item in chunks], args.embedding_model)
+            vectors = embed_texts(
+                [chunk_embedding_text(item) for item in chunks],
+                args.embedding_model,
+                batch_size=args.batch_size,
+            )
             build_index(vectors, chunks, args.output, args.embedding_model)
             print(f"Indexed {len(chunks)} local chunk(s).")
         else:
