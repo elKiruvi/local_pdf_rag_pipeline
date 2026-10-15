@@ -78,10 +78,10 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "index":
             chunks = read_json(args.chunks)
             vectors = embed_texts([item["text"] for item in chunks], args.embedding_model)
-            build_index(vectors, chunks, args.output)
+            build_index(vectors, chunks, args.output, args.embedding_model)
             print(f"Indexed {len(chunks)} local chunk(s).")
         else:
-            index, chunks = load_index(args.index)
+            index, chunks = load_index(args.index, args.embedding_model)
             if args.command == "evaluate":
                 cases = read_json(args.cases)
                 result = evaluate(
