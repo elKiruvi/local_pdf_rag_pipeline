@@ -107,3 +107,34 @@ def test_example_labels_match_newly_generated_chunks(tmp_path):
         by_id[id_]["page"] == 1
         for id_ in relevant["What should happen after pressing the power button?"]
     )
+
+
+def test_cli_index_retrieve_ask_evaluate_without_ollama(tmp_path, monkeypatch, capsys):
+    from types import SimpleNamespace
+
+    class OfflineClient:
+        def embed(self, *, model, input):
+            assert model == "embeddinggemma"
+            return SimpleNamespace(embeddings=[[1.0, 0.0] for _ in input])
+
+        def chat(self, *, model, messages):
+            assert model == "gemma3:4b"
+            assert "<untrusted_passage>" in messages[1]["content"]
+            return SimpleNamespace(message=SimpleNamespace(content="Evidence is insufficient."))
+
+    monkeypatch.setattr("local_pdf_rag_pipeline.embed.Client", OfflineClient)
+    monkeypatch.setattr("local_pdf_rag_pipeline.rag.Client", OfflineClient)
+    monkeypatch.chdir(tmp_path)
+    for args in (["demo"], ["ingest", "--pdf", "outputs/demo.pdf"], ["chunk"], ["index"]):
+        assert main(args) == 0
+    assert main(["retrieve", "backup?", "--top-k", "1"]) == 0
+    found = json.loads(capsys.readouterr().out.split("Indexed 3 local chunk(s).\n")[-1])
+    assert found[0]["source"] == "demo.pdf" and found[0]["page"] >= 1
+    assert main(["ask", "backup?", "--top-k", "1"]) == 0
+    response = json.loads(capsys.readouterr().out)
+    assert response["answer"] == "Evidence is insufficient."
+    assert response["sources"][0]["source"] == "demo.pdf"
+    cases = Path(__file__).resolve().parents[1] / "examples/evaluation.json"
+    assert main(["evaluate", "--cases", str(cases)]) == 0
+    assert json.loads(capsys.readouterr().out)["cases"] == 2
+    assert not list(tmp_path.glob("*.log"))
