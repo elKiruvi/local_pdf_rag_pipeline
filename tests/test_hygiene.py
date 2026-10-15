@@ -1,6 +1,9 @@
 """Unit checks for the generic publication guard without storing private examples."""
 
 import importlib.util
+import shutil
+import subprocess
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -89,3 +92,58 @@ def test_history_scan_fails_closed_on_incomplete_git(monkeypatch):
     monkeypatch.setattr(module, "git", lambda *args: b"true")
     with pytest.raises(ValueError, match="Incomplete"):
         module.scan_history()
+
+
+def test_publication_cli_rejects_forced_add_without_exposing_matches(tmp_path):
+    repository = tmp_path / "synthetic-publication"
+    (repository / "scripts").mkdir(parents=True)
+    shutil.copy2(
+        Path(__file__).resolve().parents[1] / "scripts/check_repository.py",
+        repository / "scripts/check_repository.py",
+    )
+    fake_token = "ghp_" + "A7sT4vR9kL3mN6pQ2wX8yZ5bC1dE0fG4hJ7i"
+    samples = {
+        "examples/forbidden.csv": "field,value\n",
+        "examples/notes.json": "{}\n",
+        "docs/notes.txt": "text\n",
+        "docs/renamed.md": "%PDF-1.7\n",
+        ".env": "sample\n",
+        "outputs/index/vectors.index": "document-derived index\n",
+        "tests/test_credentials.py": "api_key: " + fake_token + "\n",
+    }
+    for name, content in samples.items():
+        path = repository / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    subprocess.run(["git", "init", "-q", str(repository)], check=True, capture_output=True)
+    subprocess.run(["git", "add", "-f", "."], cwd=repository, check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Synthetic Test",
+            "-c",
+            "user.email=test" + "@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-qm",
+            "Synthetic negative case",
+        ],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    result = subprocess.run(
+        [sys.executable, str(repository / "scripts/check_repository.py"), "--history"],
+        cwd=repository,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert all(
+        category in result.stdout for category in ("forbidden_path", "binary", "service_token")
+    )
+    assert fake_token not in result.stdout + result.stderr
+    assert all(name not in result.stdout + result.stderr for name in samples)
