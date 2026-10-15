@@ -39,4 +39,4 @@ select = ["E", "F", "I", "B", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=local_pdf_rag_pipeline --cov-report=term-missing --cov-fail-under=80"
+addopts = "--cov=local_pdf_rag_pipeline --cov-report=term-missing --cov-fail-under=90"
