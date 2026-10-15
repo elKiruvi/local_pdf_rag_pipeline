@@ -4,13 +4,19 @@ import numpy as np
 from ollama import Client, ResponseError
 
 EMBEDDING_MODEL = "embeddinggemma"
+LOCAL_OLLAMA_HOST = "http://127.0.0.1:11434"
+
+
+def local_client() -> Client:
+    """Avoid ambient host, proxy, and API-key settings for document requests."""
+    return Client(host=LOCAL_OLLAMA_HOST, headers={"Authorization": ""}, trust_env=False)
 
 
 def embed_texts(texts: list[str], model: str = EMBEDDING_MODEL, client=None) -> np.ndarray:
     if not texts or any(not isinstance(text, str) or not text.strip() for text in texts):
         raise ValueError("Embedding input must contain nonempty strings.")
     try:
-        response = (client or Client()).embed(model=model, input=texts)
+        response = (client or local_client()).embed(model=model, input=texts)
     except (ConnectionError, ResponseError) as exc:
         raise RuntimeError(
             f"Local Ollama unavailable or embedding model '{model}' missing."
